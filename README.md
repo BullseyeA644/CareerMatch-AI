@@ -17,6 +17,12 @@ The system extracts resume information, compares candidate profiles with job des
 - FAISS
 - Groq LLM API
 - NumPy
+- Backend: Python, FastAPI
+- Frontend: Streamlit
+- Embeddings: Sentence Transformers (all-MiniLM-L6-v2)
+- Vector Search: FAISS
+- LLM: GPT-OSS-20B via GroqCloud
+- Data Sources: RemoteOK, Arbeitnow, Himalayas
 
 ## Features
 
@@ -64,10 +70,12 @@ Start the frontend in another terminal:
 python -m streamlit run ui/streamlit_app.py
 ```
 
-## Planned Improvements
+## Recent Improvements
 
-- Experience-aware job ranking
-- Automated skill-gap analysis
-- Personalized AI job-search agent
-- Improved recommendation relevance
-- Recommendation evaluation and testing
+- Integrated Groq LLM for AI-generated job match explanations
+- Added job collection from RemoteOK, Arbeitnow, and Himalayas
+- Implemented experience-aware and technical-role filtering
+- Added India-eligible remote and Worldwide search preferences
+- Expanded FAISS indexing to support the complete job dataset
+- Added automatic dataset initialization on first startup
+- Improved API response handling and numerical score formatting
