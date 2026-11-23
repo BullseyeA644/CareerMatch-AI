@@ -27,6 +27,41 @@ st.set_page_config(
     layout="wide"
 )
 
+from pathlib import Path
+
+from app.scraper import scrape_all_jobs
+from app.rag_pipeline import (
+    load_jobs,
+    retrieve_jobs,
+    vector_db
+)
+
+# Load Groq key from Streamlit Cloud secrets
+if not os.getenv("GROQ_API_KEY"):
+    try:
+        os.environ["GROQ_API_KEY"] = st.secrets["GROQ_API_KEY"]
+    except (FileNotFoundError, KeyError):
+        pass
+
+from app.llm_reasoning import generate_reasoning
+
+
+@st.cache_resource(show_spinner="Preparing job database...")
+def prepare_database():
+
+    data_file = Path("data/jobs.json")
+
+    if not data_file.exists():
+        scrape_all_jobs()
+
+    if not data_file.exists():
+        raise RuntimeError("Unable to fetch job listings.")
+
+    load_jobs()
+
+    return True
+
+
 # =========================================
 # Custom CSS
 # =========================================
@@ -162,16 +197,40 @@ if st.button("🔍 Match Jobs"):
                 "Finding best jobs..."
             ):
 
-                response = requests.post(
-                    "http://localhost:8000/match",
-                    json={
-                        "resume": resume_text,
-                        "location_preference": location_preference
-                    },
-                    timeout=180
+
+                prepare_database()
+
+                results = retrieve_jobs(
+                    resume_text,
+                    location_preference=location_preference
                 )
 
-                data = response.json()
+                matches = []
+
+                for item in results:
+                    job = item["job"]
+
+                    reasoning = generate_reasoning(
+                        resume_text,
+                        job
+                    )
+
+                    matches.append({
+                        "job_title": job.get("title", "N/A"),
+                        "company": job.get("company", "N/A"),
+                        "location": job.get("location", "Remote"),
+                        "source": job.get("source", "Unknown"),
+                        "job_url": job.get("url", ""),
+                        "match_percentage": round(float(item["score"]), 2),
+                        "reasoning": reasoning or "Analysis unavailable."
+                    })
+
+                data = {
+                    "success": True,
+                    "total_matches": len(matches),
+                    "matches": matches
+                }
+
 
                 if data["success"]:
 
