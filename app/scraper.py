@@ -1,187 +1,238 @@
-from sys import exception
 
 import requests
 import json
+import html
+import re
+from pathlib import Path
 
-# =========================================
-# Fetch Jobs from RemoteOK
-# =========================================
 
-def fetch_remoteok_jobs():
+def clean_description(value):
+    text = html.unescape(str(value or ""))
+    text = re.sub(r"<[^>]+>", " ", text)
+    text = html.unescape(text)
+    return re.sub(r"\s+", " ", text).strip()[:2500]
 
-    url = "https://remoteok.com/api"
-
-    response = requests.get(
-        url,
-        headers={
-            "User-Agent": "Mozilla/5.0"
-        },
-        timeout=20
-    )
-
-    data = response.json()
-
-    jobs = []
-
-    for item in data[1:]:
-
-        try:
-
-            job = {
-                "title": item.get("position", ""),
-                "company": item.get("company", ""),
-                "description": item.get("description", "")[:2000],
-                "location": item.get("location", "Remote"),
-                "source": "RemoteOK",
-                "url": item.get("url", "")
-            }
-
-            jobs.append(job)
-
-        except Exception:
-            pass
-
-    return jobs
-
-# =========================================
-# Fetch Jobs from Arbeitnow
-# =========================================
 
 def fetch_remoteok_jobs():
-    url = "https://remoteok.com/api"
-
-    headers = {
-        "User-Agent": "Mozilla/5.0"
-    }
+    print("Fetching RemoteOK jobs...")
 
     try:
-        response = requests.get(url, headers=headers, timeout=10)
-
-        if response.status_code != 200:
-            print("Failed:", response.status_code)
-            return []
-
-        data = response.json()
+        response = requests.get(
+            "https://remoteok.com/api",
+            headers={"User-Agent": "CareerMatchAI/1.0"},
+            timeout=20
+        )
+        response.raise_for_status()
 
         jobs = []
 
-        for job in data[1:]:
+        for item in response.json():
+            if not isinstance(item, dict):
+                continue
+            if not item.get("position"):
+                continue
+
             jobs.append({
-                "title": job.get("position"),
-                "company": job.get("company"),
-                "description": job.get("description", "")
+                "title": item.get("position") or "",
+                "company": item.get("company") or "",
+                "description": clean_description(
+                    item.get("description")
+                ),
+                "location": item.get("location") or "Remote",
+                "source": "RemoteOK",
+                "url": item.get("url") or ""
             })
 
         return jobs
 
-    except Exception as e:
-        print("Scraping error:", e)
+    except (requests.RequestException, ValueError) as e:
+        print("RemoteOK error:", e)
         return []
 
-# def fetch_arbeitnow_jobs():
 
-#     url = "https://www.arbeitnow.com/api/job-board-api"
+def fetch_arbeitnow_jobs():
+    print("Fetching Arbeitnow jobs...")
 
-#     response = requests.get(
-#         url,
-#         timeout=20
-#     )
+    try:
+        response = requests.get(
+            "https://www.arbeitnow.com/api/job-board-api",
+            timeout=30
+        )
+        response.raise_for_status()
 
-#     d#ata = response.json()
-#     try: 
-#         data = response.json()
-#     except exception as et:
-#         print("remoteok API failed : ", et)
-#         return[]
+        jobs = []
 
-#     jobs = []
+        for item in response.json().get("data", []):
+            jobs.append({
+                "title": item.get("title") or "",
+                "company": item.get("company_name") or "",
+                "description": clean_description(
+                    item.get("description")
+                ),
+                "location": item.get("location") or "",
+                "source": "Arbeitnow",
+                "url": item.get("url") or ""
+            })
 
-#     for item in data["data"]:
+        return jobs
 
-#         try:
+    except (requests.RequestException, ValueError) as e:
+        print("Arbeitnow error:", e)
+        return []
 
-#             job = {
-#                 "title": item.get("title", ""),
-#                 "company": item.get("company_name", ""),
-#                 "description": item.get("description", "")[:2000],
-#                 "location": item.get("location", ""),
-#                 "source": "Arbeitnow",
-#                 "url": item.get("url", "")
-#             }
 
-#             jobs.append(job)
+def fetch_himalayas_jobs():
+    print("Fetching India-eligible jobs from Himalayas...")
 
-#         except Exception:
-#             pass
+    from time import time
 
-#     return jobs
+    queries = [
+        "software",
+        "python",
+        "machine learning",
+        "data engineer"
+    ]
 
-# =========================================
-# Clean Jobs
-# =========================================
+    jobs = []
+    seen = set()
+
+    for query in queries:
+        try:
+            response = requests.get(
+                "https://himalayas.app/jobs/api/search",
+                params={
+                    "country": "IN",
+                    "q": query,
+                    "sort": "recent",
+                    "page": 1
+                },
+                timeout=30
+            )
+
+            response.raise_for_status()
+            data = response.json()
+
+            for item in data.get("jobs", []):
+                guid = item.get("guid")
+
+                if guid and guid in seen:
+                    continue
+
+                expiry = item.get("expiryDate")
+                if expiry is not None and float(expiry) <= time():
+                    continue
+
+                application_url = item.get("applicationLink")
+                if not application_url:
+                    continue
+
+                job = {
+                    "title": item.get("title") or "",
+                    "company": item.get("companyName") or "",
+                    "description": clean_description(
+                        item.get("description") or item.get("excerpt")
+                    ),
+                    "location": "Remote - India eligible",
+                    "source": "Himalayas",
+                    "source_url": "https://himalayas.app",
+                    "url": application_url,
+                    "employment_type": item.get("employmentType") or "",
+                    "seniority": item.get("seniority") or "",
+                    "location_restrictions": item.get("locationRestrictions") or [],
+                    "expires_at": expiry,
+                    "guid": guid
+                }
+
+                jobs.append(job)
+
+                if guid:
+                    seen.add(guid)
+
+        except (requests.RequestException, ValueError, TypeError) as e:
+            print(f"Himalayas error for {query}: {e}")
+
+    print(f"Fetched {len(jobs)} Himalayas jobs")
+    return jobs
 
 def clean_jobs(jobs):
-
     cleaned = []
+    seen = set()
 
     for job in jobs:
+        title = str(job.get("title") or "")
+        description = str(job.get("description") or "")
 
-        if (
-            len(job["title"]) > 2
-            and len(job["description"]) > 20
-        ):
+        if len(title) < 3 or len(description) < 20:
+            continue
 
-            cleaned.append(job)
+        identity = (
+            title.strip().lower(),
+            str(job.get("company") or "").strip().lower()
+        )
+
+        if identity in seen:
+            continue
+
+        seen.add(identity)
+        cleaned.append(job)
 
     return cleaned
 
-# =========================================
-# Save Jobs
-# =========================================
 
 def save_jobs(jobs):
+    Path("data").mkdir(exist_ok=True)
 
-    with open(
-        "data/jobs.json",
-        "w",
-        encoding="utf-8"
-    ) as file:
+    with open("data/jobs.json", "w", encoding="utf-8") as f:
+        json.dump(jobs, f, indent=2, ensure_ascii=False)
 
-        json.dump(
-            jobs,
-            file,
-            indent=4,
-            ensure_ascii=False
-        )
 
-# =========================================
-# Main Scraper Function
-# =========================================
 
 def scrape_all_jobs():
+    data_path = Path("data/jobs.json")
 
-    print("Fetching RemoteOK jobs...")
+    previous_jobs = []
 
-    remoteok_jobs = fetch_remoteok_jobs()
+    if data_path.exists():
+        try:
+            previous_jobs = json.loads(
+                data_path.read_text(encoding="utf-8")
+            )
+        except (OSError, ValueError):
+            previous_jobs = []
 
-    print(f"Fetched {len(remoteok_jobs)} RemoteOK jobs")
+    sources = [
+        ("RemoteOK", fetch_remoteok_jobs()),
+        ("Arbeitnow", fetch_arbeitnow_jobs()),
+        ("Himalayas", fetch_himalayas_jobs())
+    ]
 
-    print("Fetching Arbeitnow jobs...")
+    all_jobs = []
 
-    arbeitnow_jobs = []
+    for source, new_jobs in sources:
+        print(f"{source}: {len(new_jobs)} fetched")
 
-    print(f"Fetched {len(arbeitnow_jobs)} Arbeitnow jobs")
+        if new_jobs:
+            all_jobs.extend(new_jobs)
+        else:
+            saved_jobs = [
+                job for job in previous_jobs
+                if job.get("source") == source
+            ]
 
-    # Combine jobs
-    all_jobs = remoteok_jobs + arbeitnow_jobs
+            print(
+                f"Retaining {len(saved_jobs)} "
+                f"previous {source} jobs"
+            )
 
-    # LIMIT JOBS
-    all_jobs = all_jobs[:100]
+            all_jobs.extend(saved_jobs)
 
     cleaned_jobs = clean_jobs(all_jobs)
 
-    save_jobs(cleaned_jobs)
+    if cleaned_jobs:
+        save_jobs(cleaned_jobs)
+        print(f"Saved {len(cleaned_jobs)} jobs")
+        return cleaned_jobs
 
-    print(f"Saved {len(cleaned_jobs)} jobs")
+    print("No valid jobs. Dataset unchanged.")
+    return previous_jobs
 
-    return cleaned_jobs

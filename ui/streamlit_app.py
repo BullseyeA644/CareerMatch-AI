@@ -124,6 +124,28 @@ if uploaded_file is not None:
 # Match Jobs
 # =========================================
 
+
+# =========================================
+# Location Preference
+# =========================================
+
+st.subheader("Job Location Preference")
+
+location_option = st.selectbox(
+    "Where do you want to work?",
+    [
+        "India Eligible (Remote)",
+        "Worldwide"
+    ]
+)
+
+location_preference = (
+    "india"
+    if location_option == "India Eligible (Remote)"
+    else "worldwide"
+)
+
+
 if st.button("🔍 Match Jobs"):
 
     if resume_text.strip() == "":
@@ -143,7 +165,8 @@ if st.button("🔍 Match Jobs"):
                 response = requests.post(
                     "http://localhost:8000/match",
                     json={
-                        "resume": resume_text
+                        "resume": resume_text,
+                        "location_preference": location_preference
                     },
                     timeout=180
                 )

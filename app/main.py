@@ -13,6 +13,8 @@ from app.llm_reasoning import (
 from app.job_refresher import (
     start_scheduler
 )
+from typing import Literal
+from pathlib import Path
 
 print("FASTAPI SERVER STARTED")
 
@@ -28,23 +30,38 @@ app = FastAPI()
 
 print("\nFetching latest jobs...")
 
-scrape_all_jobs()
+# scrape_all_jobs()
 
 # =========================================
 # Build Initial FAISS Database
 # =========================================
 
-print("\nBuilding FAISS database...")
+# print("\nBuilding FAISS database...")
 
-load_jobs()
+# load_jobs()
 
-# =========================================
-# Start Background Scheduler
-# =========================================
+# # =========================================
+# # Start Background Scheduler
+# # =========================================
 
-print("\nStarting job refresh scheduler...")
+# print("\nStarting job refresh scheduler...")
 
-start_scheduler()
+# Initialize job dataset if missing
+data_file = Path("data/jobs.json")
+
+if not data_file.exists():
+    print("First run: Fetching job listings...")
+    scrape_all_jobs()
+
+# Build FAISS from saved jobs
+if data_file.exists():
+    print("Building FAISS database...")
+    load_jobs()
+else:
+    print("No jobs available. Skipping indexing.")
+
+
+# start_scheduler()
 
 # =========================================
 # Request Model
@@ -53,6 +70,7 @@ start_scheduler()
 class ResumeRequest(BaseModel):
 
     resume: str
+    location_preference: Literal["india", "worldwide"] = "worldwide"
 
 # =========================================
 # Root Route
@@ -83,7 +101,8 @@ def match_jobs(
         # =====================================
 
         results = retrieve_jobs(
-            request.resume
+            request.resume,
+            location_preference=request.location_preference
         )
 
         matches = []

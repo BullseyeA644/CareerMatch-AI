@@ -92,6 +92,10 @@ def generate_reasoning(
         - Use recruiter-style language
         - Maximum 120 words
         - Avoid bullet points
+        - Write 3 to 5 complete sentences
+        - Discuss missing qualifications honestly
+        - Do not exaggerate the candidate's experience
+        - Never return an incomplete explanation
         """
 
         response = client.chat.completions.create(
@@ -113,7 +117,8 @@ def generate_reasoning(
 
             temperature=0.4,
 
-            max_tokens=600
+            reasoning_effort="low",
+            max_completion_tokens=1200
         )
 
         reasoning = (
